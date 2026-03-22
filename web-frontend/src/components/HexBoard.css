@@ -1,0 +1,191 @@
+/* Main container */
+.hex-board-root {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  position: relative;
+  overflow: visible;
+}
+
+/* Grid wrapper */
+.hex-board-grid {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: visible;
+
+  --size: 42px; /* tile size */
+  --gap: 1px; /* spacing between tiles */
+
+  /* independent tuning knobs for coord spacing */
+  --label-out-v-top: 16px;     /* top side closer */
+  --label-out-v-bottom: 26px;  /* bottom side farther */
+  --label-out-diag: 24px;      /* 4 diagonal sides farther */
+}
+
+/* Piece container inside each tile */
+.piece-container {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+/* SVG img piece styling */
+.piece-svg {
+  width: 70%;
+  height: 70%;
+  max-width: 70%;
+  max-height: 70%;
+
+  position: absolute;
+  transform: rotate(-90deg);
+  transform-origin: center;
+
+  user-select: none;
+  pointer-events: none;
+}
+
+/* Individual hex tile */
+.hex-tile {
+  width: var(--size);
+  aspect-ratio: 1 / 1;
+  position: absolute;
+
+  clip-path: polygon(
+    25% 0%,
+    75% 0%,
+    100% 50%,
+    75% 100%,
+    25% 100%,
+    0% 50%
+  );
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  font-size: 0.6rem;
+  font-weight: 500;
+  color: #eee;
+}
+
+/* Light/Dark colors */
+.hex-tile.light {
+  background-color: hsl(0, 0%, 100%);
+  color: #222;
+  transform: rotate(90deg);
+  transform-origin: bottom left;
+}
+
+.hex-tile.medium {
+  background-color: lab(84.23% 1.72 0.6);
+  color: #222;
+  transform: rotate(90deg);
+  transform-origin: bottom left;
+}
+
+.hex-tile.dark {
+  background-color: rgb(159, 157, 156);
+  color: #fff;
+  transform: rotate(90deg);
+  transform-origin: bottom left;
+}
+
+/* Position tiles using axial coordinates */
+.hex-tile {
+  left: calc(
+    50% + (var(--q) * (var(--size) + var(--gap))) +
+      (var(--r) * ((var(--size) + var(--gap)) / 2))
+  );
+  top: calc(30% + (var(--r) * 0.78 * (var(--size) + var(--gap))));
+
+  transform: translate(-50%, -50%);
+  transition: box-shadow 0.18s ease, background-color 0.18s ease;
+}
+
+/* Tile label inside */
+.tile-label {
+  font-size: 0.6rem;
+  pointer-events: none;
+  transform: rotate(-90deg);
+  opacity: 0.35;
+  font-weight: 700;
+}
+
+/* Piece symbol inside a tile */
+.piece-symbol {
+  position: absolute;
+  font-size: 1.4rem;
+  pointer-events: none;
+}
+
+/* Player colors */
+.piece-white {
+  color: #f9fafb;
+  text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
+}
+
+.piece-black {
+  color: #0f172a;
+  text-shadow: 0 0 4px rgba(248, 250, 252, 0.7);
+}
+
+.piece-red {
+  color: #f97373;
+  text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
+}
+
+/* From-tile highlight */
+.hex-tile.selected-from {
+  background-color: #60a5fa;
+  box-shadow: 0 0 0 2px #60a5fa, 0 0 18px rgba(96, 165, 250, 0.65);
+  color: #f9fafb;
+  z-index: 5;
+}
+
+/* To-tile highlight */
+.hex-tile.selected-to {
+  background-color: #fbbf24;
+  box-shadow: 0 0 0 2px #fbbf24, 0 0 18px rgba(251, 191, 36, 0.65);
+  color: #f9fafb;
+  z-index: 6;
+}
+
+.hex-tile.legal-target {
+  z-index: 6;
+}
+
+/* YELLOW when current player's piece is selected */
+.hex-board-root.legal-current .hex-tile.legal-target {
+  background-color: hsla(52, 95%, 65%, 0.85); /* lemon yellow */
+  box-shadow:
+    0 0 0 2px hsla(52, 95%, 65%, 0.9),
+    0 0 14px hsla(52, 95%, 65%, 0.45);
+  color: #1f2937;
+}
+
+/* RED when non-current player's piece is selected */
+.hex-board-root.legal-not-current .hex-tile.legal-target {
+  background-color: hsla(355, 90%, 70%, 0.75); /* clean bright red */
+  box-shadow:
+    0 0 0 2px hsla(355, 90%, 70%, 0.8),
+    0 0 14px hsla(355, 90%, 70%, 0.45);
+  color: #1f2937;
+}
+
+
+.hex-board-root.legal-not-current.legal-current .hex-tile.legal-target {
+  background-color: hsla(52, 95%, 65%, 0.85); /* lemon yellow */
+  box-shadow:
+    0 0 0 2px hsla(52, 95%, 65%, 0.9),
+    0 0 14px hsla(52, 95%, 65%, 0.45);
+  color: #1f2937;
+}
+
+
+
+.hex-board-root.hex-board-disabled {
+  opacity: 0.7;
+  pointer-events: none;
+}

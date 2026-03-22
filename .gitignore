@@ -1,0 +1,58 @@
+# Java build artifacts
+*.class
+*.log
+*.ctxt
+.mtj.tmp/
+
+# Package archives
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# Build directories
+/bin/
+/out/
+/target/
+
+!gradle/wrapper/gradle-wrapper.properties
+!gradlew
+!gradlew.bat
+
+
+.vscode/
+!.vscode/
+!.vscode/launch.json
+!.vscode/tasks.json
+
+.history/
+*.code-workspace
+
+# macOS system files
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# SDKMAN (Java version manager)
+.sdkman/
+
+# Java crash logs
+hs_err_pid*
+replay_pid*
+
+# Temporary or IDE-specific files
+*.iml
+.idea/
+*.swp
+*.swo
+
+# Gradle
+.gradle/
+build/
+
+# Mac
+.DS_Store
+
+.vscode/settings.json

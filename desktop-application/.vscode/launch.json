@@ -1,0 +1,20 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "java",
+      "name": "Launch JChessApp (direct)",
+      "request": "launch",
+      "mainClass": "jchess.JChessApp",
+      "cwd": "${workspaceFolder}/java-open-chess-ccd",
+      "vmArgs": "-Dfile.encoding=UTF-8"
+    },
+    {
+      "type": "java",
+      "name": "Attach to Gradle run",
+      "request": "attach",
+      "hostName": "localhost",
+      "port": 5005
+    }
+  ]
+}

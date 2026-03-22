@@ -1,0 +1,57 @@
+// build.gradle
+
+plugins {
+    id 'java'
+    id 'application'
+    id 'com.github.johnrengelman.shadow' version '8.1.1'
+}
+
+group = 'com.team.mars'
+version = '1.0.0'
+
+java {
+    toolchain { languageVersion = JavaLanguageVersion.of(17) }
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+application {
+    mainClass = 'jchess.JChessApp'
+}
+
+repositories {
+    mavenCentral()
+    flatDir { dirs 'libs' }
+}
+
+dependencies {
+    implementation name: 'appframework-1.0.3'
+    implementation name: 'swing-worker-1.1'
+}
+
+sourceSets {
+  main {
+    // all .java live here
+    java.srcDirs = ['src/main/java']
+
+    resources.srcDirs = ['src/main/resources']
+    resources.includes = [
+      '**/*.properties',
+      '**/*.png', '**/*.gif', '**/*.jpg',
+      '**/*.txt', '**/*.xml'
+    ]
+  }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+/** Build a runnable “fat jar” that includes dependencies */
+tasks.named('shadowJar') {
+    archiveBaseName.set('java-open-chess-ccd')
+    archiveClassifier.set('all')
+    manifest {
+        attributes 'Main-Class': 'jchess.JChessApp'
+    }
+}

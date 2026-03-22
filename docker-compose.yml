@@ -1,0 +1,89 @@
+version: "3.9" # (Optional: You can remove this line to fix the WARN)
+
+services:
+
+  threeplayer-service:
+    build:
+      context: ./three-player-chess
+    container_name: threeplayer-service
+    ports:
+      - "8081:8081"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/chessdb
+      - SPRING_DATASOURCE_USERNAME=chess
+      - SPRING_DATASOURCE_PASSWORD=chess
+    networks:
+      - three-player-net
+
+  # --- two player ---
+  twoplayer-service:
+    build:
+      context: ./two-player-chess  # Changed from . to ./two-player-chess
+      dockerfile: Dockerfile       # Now looks for Dockerfile inside that folder
+    container_name: twoplayer-service
+    ports:
+      - "8082:8082"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - DB_HOST=postgres
+      - DB_NAME=chessdb
+      - DB_USER=chess
+      - DB_PASSWORD=chess
+    depends_on:
+      - postgres
+    networks:
+      - three-player-net
+  # ---------------------------
+
+  gateway-service:
+    build:
+      context: ./gateway-service
+    container_name: gateway-service
+    ports:
+      - "8080:8080"
+    environment:
+      - BACKEND_BASE_URL=http://threeplayer-service:8081
+      # No need to add TWO_PLAYER_URL here if you hardcoded it in GatewayConfig.java
+      # But usually, it's better to use env var:
+      # - TWOPLAYER_BASE_URL=http://twoplayer-service:8082 
+      - FRONTEND_BASE_URL=http://frontend-service:80
+    depends_on:
+      - threeplayer-service
+      - twoplayer-service
+    networks:
+      - three-player-net
+
+  frontend-service:
+    build:
+      context: ./web-frontend
+    container_name: frontend-service
+    environment:
+      - VITE_API_BASE_URL=http://gateway-service:8080
+    ports:
+      - "5137:80"
+    depends_on:
+      - gateway-service
+    networks:
+      - three-player-net
+
+  postgres:
+    image: postgres:16
+    container_name: postgres
+    environment:
+      - POSTGRES_DB=chessdb
+      - POSTGRES_USER=chess
+      - POSTGRES_PASSWORD=chess
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - three-player-net
+
+volumes:
+  postgres-data:
+
+networks:
+  three-player-net:
+    driver: bridge

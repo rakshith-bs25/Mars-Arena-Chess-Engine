@@ -1,0 +1,36 @@
+plugins {
+    id 'java-library'
+}
+
+group = 'com.chess'
+version = '0.0.1-SNAPSHOT'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Keep it minimal. No spring-boot dependencies here.
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+// Explicitly disabling the bootJar task if it was accidentally applied by parent configuration
+// (Though typically it shouldn't be with just java-library)
+tasks.register("bootJar") {
+    enabled = false
+}
+
+tasks.register("bootRun") {
+    enabled = false
+}

@@ -1,0 +1,1729 @@
+
+============================================================
+FILE: D:\CCD web app\feature_chess_core\java-open-chess-ccd\three-player-chess\chess-core\src\main\java\com\chess\core\board\BasePiece.java
+============================================================
+package com.chess.core.board;
+
+import com.chess.core.coordinate.HexCoordinate;
+import com.chess.core.game.PlayerColor;
+import java.util.List;
+
+public abstract class BasePiece implements Piece {
+    private final PlayerColor owner;
+    private final PieceType type;
+    private boolean hasMoved = false;
+
+    protected BasePiece(PlayerColor owner, PieceType type) {
+        this.owner = owner;
+        this.type = type;
+    }
+
+    public boolean hasMoved() {
+        return hasMoved;
+    }
+
+    public void setHasMoved(boolean hasMoved) {
+        this.hasMoved = hasMoved;
+    }
+
+    @Override
+    public PlayerColor getOwner() {
+        return owner;
+    }
+
+    @Override
+    public String getType() {
+        return type.name();
+    }
+    
+    public PieceType getPieceType() {
+        return type;
+    }
+
+    // Concrete pieces must implement this
+    @Override
+    public abstract List<HexCoordinate> getValidMoves(Board board, HexCoordinate position);
+
+    @Override
+    public String toString() {
+        return owner + "_" + type;
+    }
+}
+
+============================================================
+FILE: D:\CCD web app\feature_chess_core\java-open-chess-ccd\three-player-chess\chess-core\src\main\java\com\chess\core\board\Board.java
+============================================================
+package com.chess.core.board;
+
+import com.chess.core.game.PlayerColor;
+import java.util.List;
+
+/**
+ * Represents the grid and the pieces upon it.
+ * Decouples the storage of pieces from the game rules.
+ */
+public interface Board {
+    /**
+     * Retrieves a piece at a specific location.
+     * @param coordinateId The string identifier of the tile (e.g., "D5" or "A1").
+     * @return The Piece at that location, or null if empty.
+     */
+    Piece getPiece(String coordinateId);
+
+    /**
+     * Retrieves all active pieces belonging to a specific player.
+     * Essential for calculating Check/Checkmate conditions.
+     * @param playerColor The player to query.
+     * @return A list of active pieces.
+     */
+    List<Piece> getPieces(PlayerColor playerColor);
+}
+
+============================================================
+FILE: D:\CCD web app\feature_chess_core\java-open-chess-ccd\three-player-chess\chess-core\src\main\java\com\chess\core\board\CoordinateMapper.java
+============================================================
+package com.chess.core.board;
+
+import com.chess.core.coordinate.HexCoordinate;
+
+/**
+ * Translates between internal Axial Coordinates (math) and External Tile IDs (UI).
+ * Format: "q,r" (e.g. "0,0", "-1,2")
+ */
+public class CoordinateMapper {
+    
+    public static HexCoordinate toHex(String tileId) {
+        if (tileId == null || !tileId.contains(",")) return null;
+        try {
+            String[] parts = tileId.split(",");
+            int q = Integer.parseInt(parts[0].trim());
+            int r = Integer.parseInt(parts[1].trim());
+            return HexCoordinate.of(q, r);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    public static String toId(HexCoordinate hex) {
+        return hex.q() + "," + hex.r();
+    }
+}
+
+============================================================
+FILE: D:\CCD web app\feature_chess_core\java-open-chess-ccd\three-player-chess\chess-core\src\main\java\com\chess\core\board\HexBoard.java
+============================================================
+package com.chess.core.board;
+
+import com.chess.core.coordinate.HexCoordinate;
+import com.chess.core.game.PlayerColor;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+public class HexBoard implements Board {
+    private final Map<HexCoordinate, Piece> pieceMap;
+    private final List<HexCoordinate> validCoordinates;
+
+    private static final int BOARD_RADIUS = 8;
+
+    public HexBoard() {
+        this.pieceMap = new HashMap<>();
+        this.validCoordinates = generateFullHexagon();
+    }
+
+    public HexBoard(HexBoard other) {
+        this.pieceMap = new HashMap<>(other.pieceMap);
+        this.validCoordinates = new ArrayList<>(other.validCoordinates);
+    }
+
+    private List<HexCoordinate> generateFullHexagon() {
+        List<HexCoordinate> coords = new ArrayList<>();
+        for (int q = -BOARD_RADIUS; q <= BOARD_RADIUS; q++) {
+            for (int r = -BOARD_RADIUS; r <= BOARD_RADIUS; r++) {
+                if (Math.abs(q + r) <= BOARD_RADIUS) {
+                    coords.add(HexCoordinate.of(q, r));
+                }
+            }
+        }
+        return coords;
+    }
+
+    public List<HexCoordinate> getPlayableCoordinates() {
+        return validCoordinates;
+    }
+
+    public boolean isWithinBounds(HexCoordinate coord) {
+        return validCoordinates.contains(coord);
+    }
+
+    // --- Standard Methods ---
+    public void setPiece(HexCoordinate coord, Piece piece) {
+        if (piece == null)
+            pieceMap.remove(coord);
+        else
+            pieceMap.put(coord, piece);
+    }
+
+    public Piece movePiece(HexCoordinate start, HexCoordinate end) {
+        Piece movingPiece = pieceMap.remove(start);
+        Piece captured = pieceMap.put(end, movingPiece);
+        return captured;
+    }
+
+    public void undoMove(HexCoordinate start, HexCoordinate end, Piece capturedPiece) {
+        Piece movingPiece = pieceMap.remove(end);
+        pieceMap.put(start, movingPiece);
+        if (capturedPiece != null)
+            pieceMap.put(end, capturedPiece);
+    }
+
+    public Piece getPieceAt(HexCoordinate coord) {
+        return pieceMap.get(coord);
+    }
+
+    public Map<HexCoordinate, Piece> getAllPieces() {
+        return new HashMap<>(pieceMap);
+    }
+
+    @Override
+    public Piece getPiece(String coordinateId) {
+        HexCoordinate coord = CoordinateMapper.toHex(coordinateId);
+        return (coord != null) ? pieceMap.get(coord) : null;
+    }
+
+    @Override
+    public List<Piece> getPieces(PlayerColor playerColor) {
+        return pieceMap.values().stream()
+                .filter(p -> p.getOwner() == playerColor)
+                .collect(Collectors.toList());
+    }
+}
+
+============================================================
+FILE: D:\CCD web app\feature_chess_core\java-open-chess-ccd\three-player-chess\chess-core\src\main\java\com\chess\core\board\HexNavigator.java
+============================================================
+package com.chess.core.board;
+
+import com.chess.core.coordinate.HexCoordinate;
+import com.chess.core.coordinate.HexDirection;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Simple navigator for an axial hex grid.
+ * Uses the 6 primary HexDirection values.
+ */
+public final class HexNavigator {
+
+    private HexNavigator() {}
+
+    /** Returns the next hex in the given axial direction. */
+    public static HexCoordinate next(HexCoordinate current, HexDirection dir) {
+        if (current == null || dir == null) {
+            return null;
+        }
+        return current.plus(dir.dq(), dir.dr());
+    }
+
+    /** Returns all 6 orthogonal neighbors. */
+    public static List<HexCoordinate> getAllNeighbors(HexCoordinate c) {
+        List<HexCoordinate> list = new ArrayList<>();
+        for (HexDirection d : HexDirection.values()) {
+            list.add(next(c, d));
+        }
+        return list;
+    }
+}
+
+============================================================
+FILE: D:\CCD web app\feature_chess_core\java-open-chess-ccd\three-player-chess\chess-core\src\main\java\com\chess\core\board\Piece.java
+============================================================
+package com.chess.core.board;
+
+import com.chess.core.coordinate.HexCoordinate;
+import com.chess.core.game.PlayerColor;
+import java.util.List;
+
+public interface Piece {
+    PlayerColor getOwner();
+    
+    /**
+     * Returns the String representation (e.g. "KING").
+     * Kept for DTO compatibility.
+     */
+    String getType();
+
+    /**
+     * Returns the Enum type (e.g. PieceType.KING).
+     * Used for game logic comparisons.
+     */
+    PieceType getPieceType();
+
+    /**
+     * Calculates valid moves.
+     */
+    List<HexCoordinate> getValidMoves(Board board, HexCoordinate position);
+}
+
+============================================================
+FILE: D:\CCD web app\feature_chess_core\java-open-chess-ccd\three-player-chess\chess-core\src\main\java\com\chess\core\board\PieceType.java
+============================================================
+package com.chess.core.board;
+
+public enum PieceType {
+    KING,
+    QUEEN,
+    ROOK,
+    BISHOP,
+    KNIGHT,
+    PAWN
+}
+
+============================================================
+FILE: D:\CCD web app\feature_chess_core\java-open-chess-ccd\three-player-chess\chess-core\src\main\java\com\chess\core\board\pieces\Bishop.java
+============================================================
+package com.chess.core.board.pieces;
+
+import com.chess.core.board.BasePiece;
+import com.chess.core.board.Board;
+import com.chess.core.board.HexBoard;
+import com.chess.core.board.Piece;
+import com.chess.core.board.PieceType;
+import com.chess.core.coordinate.HexCoordinate;
+import com.chess.core.coordinate.HexDiagonal;
+import com.chess.core.game.PlayerColor;
+
+import java.util.ArrayList;
+import java.util.List;
+
+public class Bishop extends BasePiece {
+    public Bishop(PlayerColor owner) {
+        super(owner, PieceType.BISHOP);
+    }
+
+    @Override
+    public List<HexCoordinate> getValidMoves(Board board, HexCoordinate start) {
+        List<HexCoordinate> moves = new ArrayList<>();
+        HexBoard hexBoard = (HexBoard) board;
+
+        // Slide in each of the 6 diagonal directions
+        for (HexDiagonal dir : HexDiagonal.values()) {
+            HexCoordinate current = start;
+
+            while (true) {
+                // Step one hex along this diagonal
+                current = current.plus(dir.dq(), dir.dr());
+
+                // 1. Off-board / outside playable area
+                if (!hexBoard.isWithinBounds(current)) {
+                    break;
+                }
+
+                // 2. Occupancy check
+                Piece target = hexBoard.getPieceAt(current);
+
+                if (target == null) {
+                    // Empty hex → legal move, continue sliding
+                    moves.add(current);
+                } else {
+                    // Occupied hex
+                    if (target.getOwner() != this.getOwner()) {
+                        // Enemy piece → capture allowed, but stop after this
+                        moves.add(current);
+                    }
+                    // Either way, bishop can’t go past this piece
+                    break;
+                }
+            }
+        }
+
+        return moves;
+    }
+}
+
+
+============================================================
+FILE: D:\CCD web app\feature_chess_core\java-open-chess-ccd\three-player-chess\chess-core\src\main\java\com\chess\core\board\pieces\King.java
+============================================================
+package com.chess.core.board.pieces;
+
+import com.chess.core.board.BasePiece;
+import com.chess.core.board.Board;
+import com.chess.core.board.HexBoard;
+import com.chess.core.board.Piece;
+import com.chess.core.board.PieceType;
+import com.chess.core.coordinate.HexCoordinate;
+import com.chess.core.coordinate.HexDirection;
+import com.chess.core.coordinate.HexDiagonal;
+import com.chess.core.game.PlayerColor;
+
+import java.util.ArrayList;
+import java.util.List;
+
+public class King extends BasePiece {
+    public King(PlayerColor owner) {
+        super(owner, PieceType.KING);
+    }
+
+    @Override
+    public List<HexCoordinate> getValidMoves(Board board, HexCoordinate start) {
+        List<HexCoordinate> moves = new ArrayList<>();
+        HexBoard hexBoard = (HexBoard) board;
+
+        // 6 orthogonal (rook-style) neighbors
+        for (HexDirection dir : HexDirection.values()) {
+            HexCoordinate target = start.plus(dir.dq(), dir.dr());
+            addIfLegal(hexBoard, target, moves);
+        }
+
+        // 6 diagonal (bishop-style) neighbors
+        for (HexDiagonal diag : HexDiagonal.values()) {
+            HexCoordinate target = start.plus(diag.dq(), diag.dr());
+            addIfLegal(hexBoard, target, moves);
+        }
+
+        return moves;
+    }
+
+    private void addIfLegal(HexBoard board, HexCoordinate target, List<HexCoordinate> moves) {
+        if (!board.isWithinBounds(target)) return;
+
+        Piece occupant = board.getPieceAt(target);
+        if (occupant == null || occupant.getOwner() != this.getOwner()) {
+            moves.add(target);
+        }
+    }
+}
+
+
+============================================================
+FILE: D:\CCD web app\feature_chess_core\java-open-chess-ccd\three-player-chess\chess-core\src\main\java\com\chess\core\board\pieces\Knight.java
+============================================================
+package com.chess.core.board.pieces;
+
+import com.chess.core.board.BasePiece;
+import com.chess.core.board.Board;
+import com.chess.core.board.HexBoard;
+import com.chess.core.board.Piece;
+import com.chess.core.board.PieceType;
+import com.chess.core.coordinate.HexCoordinate;
+import com.chess.core.game.PlayerColor;
+
+import java.util.ArrayList;
+import java.util.List;
+
+public class Knight extends BasePiece {
+
+    // 12 distinct jump vectors in axial coordinates (q, r)
+    private static final int[][] JUMPS = {
+        // Around the ring clockwise
+        {  1, -3 },
+        {  2, -3 },
+        {  3, -2 },
+        {  3, -1 },
+        {  2,  1 },
+        {  1,  2 },
+        { -1,  3 },
+        { -2,  3 },
+        { -3,  2 },
+        { -3,  1 },
+        { -2, -1 },
+        { -1, -2 }
+    };
+
+    public Knight(PlayerColor owner) {
+        super(owner, PieceType.KNIGHT);
+    }
+
+    @Override
+    public List<HexCoordinate> getValidMoves(Board board, HexCoordinate start) {
+        List<HexCoordinate> moves = new ArrayList<>();
+        HexBoard hexBoard = (HexBoard) board;
+
+        for (int[] v : JUMPS) {
+            HexCoordinate target = start.plus(v[0], v[1]);
+
+            // 1) Stay on the 3-player board
+            if (!hexBoard.isWithinBounds(target)) continue;
+
+            // 2) Can't land on own piece
+            Piece piece = hexBoard.getPieceAt(target);
+            if (piece == null || piece.getOwner() != this.getOwner()) {
+                moves.add(target);
+            }
+        }
+
+        return moves;
+    }
+}
+
+
+============================================================
+FILE: D:\CCD web app\feature_chess_core\java-open-chess-ccd\three-player-chess\chess-core\src\main\java\com\chess\core\board\pieces\Pawn.java
+============================================================
+package com.chess.core.board.pieces;
+
+import com.chess.core.board.*;
+import com.chess.core.coordinate.*;
+import com.chess.core.game.PlayerColor;
+
+import java.util.ArrayList;
+import java.util.List;
+
+public class Pawn extends BasePiece {
+
+    public Pawn(PlayerColor owner) {
+        super(owner, PieceType.PAWN);
+    }
+
+    @Override
+    public List<HexCoordinate> getValidMoves(Board board, HexCoordinate start) {
+        List<HexCoordinate> moves = new ArrayList<>();
+        HexBoard hexBoard = (HexBoard) board;
+
+        HexDirection[] forwards = getForwardDirections(getOwner());
+        HexDiagonal[] captures = getCaptureDiagonals(getOwner());
+
+        // ---------- Forward move ----------
+        for (HexDirection forward : forwards) {
+            HexCoordinate oneStep = start.plus(forward.dq(), forward.dr());
+            if (hexBoard.isWithinBounds(oneStep) && hexBoard.getPieceAt(oneStep) == null) {
+                moves.add(oneStep);
+
+                // Double move from initial rank
+                if (!this.hasMoved()) {
+                    HexCoordinate twoStep = oneStep.plus(forward.dq(), forward.dr());
+                    if (hexBoard.isWithinBounds(twoStep)
+                        && hexBoard.getPieceAt(twoStep) == null) {
+                        moves.add(twoStep);
+                    }
+                }
+            }
+        }
+
+        // ---------- Captures ----------
+        for (HexDiagonal diag : captures) {
+            HexCoordinate target = start.plus(diag.dq(), diag.dr());
+            if (!hexBoard.isWithinBounds(target)) continue;
+
+            Piece enemy = hexBoard.getPieceAt(target);
+            if (enemy != null && enemy.getOwner() != getOwner()) {
+                moves.add(target);
+            }
+        }
+
+        return moves;
+    }
+
+    // ONE forward direction per color
+    private HexDirection[] getForwardDirections(PlayerColor color) {
+        switch (color) {
+            case WHITE:
+                return new HexDirection[] {
+                        HexDirection.NORTH,
+                        HexDirection.NORTH_EAST
+                };
+            case RED:
+                return new HexDirection[] {
+                        HexDirection.NORTH_WEST,
+                        HexDirection.SOUTH_WEST
+                };
+            case BLACK:
+                return new HexDirection[] {
+                        HexDirection.SOUTH_EAST,
+                        HexDirection.SOUTH
+                };
+            default:
+                throw new IllegalStateException("Unknown player color: " + color);
+        }
+    }
+
+    // TWO diagonal capture directions
+    private HexDiagonal[] getCaptureDiagonals(PlayerColor color) {
+        switch (color) {
+            case WHITE:
+                return new HexDiagonal[] {
+                        HexDiagonal.D6, HexDiagonal.D1
+                };
+            case BLACK:
+                return new HexDiagonal[] {
+                        HexDiagonal.D3, HexDiagonal.D4
+                };
+            case RED:
+                return new HexDiagonal[] {
+                        HexDiagonal.D5, HexDiagonal.D2
+                };
+            default:
+                return new HexDiagonal[0];
+        }
+    }
+}
+
+
+============================================================
+FILE: D:\CCD web app\feature_chess_core\java-open-chess-ccd\three-player-chess\chess-core\src\main\java\com\chess\core\board\pieces\Queen.java
+============================================================
+package com.chess.core.board.pieces;
+
+import com.chess.core.board.BasePiece;
+import com.chess.core.board.Board;
+import com.chess.core.board.PieceType;
+import com.chess.core.coordinate.HexCoordinate;
+import com.chess.core.game.PlayerColor;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Queen for hex chess: combines rook + bishop
+ */
+public class Queen extends BasePiece {
+
+    // Delegate movement to the already-correct rook & bishop logic
+    private final Rook rookDelegate;
+    private final Bishop bishopDelegate;
+
+    public Queen(PlayerColor owner) {
+        super(owner, PieceType.QUEEN);
+        this.rookDelegate = new Rook(owner);
+        this.bishopDelegate = new Bishop(owner);
+    }
+
+    @Override
+    public List<HexCoordinate> getValidMoves(Board board, HexCoordinate position) {
+        List<HexCoordinate> moves = new ArrayList<>();
+
+        // Rook-style moves (6 straight hex directions)
+        moves.addAll(rookDelegate.getValidMoves(board, position));
+
+        // Bishop-style moves (6 diagonal hex directions)
+        moves.addAll(bishopDelegate.getValidMoves(board, position));
+
+        return moves;
+    }
+}
+
+
+============================================================
+FILE: D:\CCD web app\feature_chess_core\java-open-chess-ccd\three-player-chess\chess-core\src\main\java\com\chess\core\board\pieces\Rook.java
+============================================================
+package com.chess.core.board.pieces;
+
+import com.chess.core.board.BasePiece;
+import com.chess.core.board.Board;
+import com.chess.core.board.HexBoard;
+import com.chess.core.board.Piece;
+import com.chess.core.board.PieceType;
+import com.chess.core.coordinate.HexCoordinate;
+import com.chess.core.coordinate.HexDirection;
+import com.chess.core.game.PlayerColor;
+
+import java.util.ArrayList;
+import java.util.List;
+
+public class Rook extends BasePiece {
+
+    public Rook(PlayerColor owner) {
+        super(owner, PieceType.ROOK);
+    }
+
+    @Override
+    public List<HexCoordinate> getValidMoves(Board board, HexCoordinate start) {
+        List<HexCoordinate> moves = new ArrayList<>();
+        HexBoard hexBoard = (HexBoard) board;
+
+        // Rook moves in all 6 axial directions (straight lines)
+        for (HexDirection dir : HexDirection.values()) {
+
+            HexCoordinate current = start.plus(dir.dq(), dir.dr());
+
+            while (hexBoard.isWithinBounds(current)) {
+
+                Piece target = hexBoard.getPieceAt(current);
+
+                if (target == null) {
+                    // Empty tile → keep sliding
+                    moves.add(current);
+                } else {
+                    // Occupied
+                    if (target.getOwner() != this.getOwner()) {
+                        // Enemy → capture allowed, then stop
+                        moves.add(current);
+                    }
+                    break; // stop on any piece
+                }
+
+                current = current.plus(dir.dq(), dir.dr());
+            }
+        }
+
+        return moves;
+    }
+}
+
+
+============================================================
+FILE: D:\CCD web app\feature_chess_core\java-open-chess-ccd\three-player-chess\chess-core\src\main\java\com\chess\core\coordinate\Direction.java
+============================================================
+package com.chess.core.coordinate;
+
+/**
+ * Primary movement directions for HEXAGONAL chess.
+ * 
+ * These are the 6 axial directions on a pointy-top hex grid.
+ * All orthogonal (rook-like) movement uses these.
+ */
+public enum Direction {
+
+    EAST(1, 0),
+    NORTHEAST(1, -1),
+    NORTHWEST(0, -1),
+    WEST(-1, 0),
+    SOUTHWEST(-1, 1),
+    SOUTHEAST(0, 1);
+
+    public final int dq;
+    public final int dr;
+
+    Direction(int dq, int dr) {
+        this.dq = dq;
+        this.dr = dr;
+    }
+}
+
+
+============================================================
+FILE: D:\CCD web app\feature_chess_core\java-open-chess-ccd\three-player-chess\chess-core\src\main\java\com\chess\core\coordinate\HexCoordinate.java
+============================================================
+package com.chess.core.coordinate;
+
+import java.util.Objects;
+
+/**
+ * Represents a location on a hexagonal grid using Axial Coordinates (q, r).
+ * q = column (diagonal axis)
+ * r = row
+ */
+public final class HexCoordinate {
+    private final int q;
+    private final int r;
+
+    public HexCoordinate(int q, int r) {
+        this.q = q;
+        this.r = r;
+    }
+
+    // Factory method for cleaner creation
+    public static HexCoordinate of(int q, int r) {
+        return new HexCoordinate(q, r);
+    }
+
+    public int q() { return q; }
+    public int r() { return r; }
+
+    /**
+     * Converts Axial (q, r) to Cube (q, r, s) coordinate 's' component.
+     * Constraint: q + r + s = 0
+     */
+    public int s() {
+        return -q - r;
+    }
+
+    /**
+     * Calculates neighbors based on a direction vector.
+     */
+    public HexCoordinate plus(int dq, int dr) {
+        return new HexCoordinate(this.q + dq, this.r + dr);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        HexCoordinate that = (HexCoordinate) o;
+        return q == that.q && r == that.r;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(q, r);
+    }
+
+    /**
+     * Calculates distance from the center (0,0).
+     * Formula: (abs(q) + abs(q+r) + abs(r)) / 2
+     */
+    public int distanceToCenter() {
+        return (Math.abs(q) + Math.abs(q + r) + Math.abs(r)) / 2;
+    }
+
+    /**
+     * Calculates the angle of this tile relative to the center (in radians).
+     * Useful for determining "Clockwise" vs "Counter-Clockwise".
+     */
+    public double getAngle() {
+        // Convert axial to cartesian (x, y) for angle calculation
+        // x = 3/2 * q
+        // y = sqrt(3)/2 * q  +  sqrt(3) * r
+        double x = 1.5 * q;
+        double y = (Math.sqrt(3) / 2.0 * q) + (Math.sqrt(3) * r);
+        return Math.atan2(y, x);
+    }
+
+    @Override
+    public String toString() {
+        return "Hex(" + q + ", " + r + ")";
+    }
+}
+
+============================================================
+FILE: D:\CCD web app\feature_chess_core\java-open-chess-ccd\three-player-chess\chess-core\src\main\java\com\chess\core\coordinate\HexDiagonal.java
+============================================================
+package com.chess.core.coordinate;
+
+public enum HexDiagonal {
+    D1(1, -2),
+    D2(2, -1),
+    D3(1, 1),
+    D4(-1, 2),
+    D5(-2, 1),
+    D6(-1, -1);
+
+    private final int dq;
+    private final int dr;
+
+    HexDiagonal(int dq, int dr) {
+        this.dq = dq;
+        this.dr = dr;
+    }
+
+    public int dq() { return dq; }
+    public int dr() { return dr; }
+}
+
+============================================================
+FILE: D:\CCD web app\feature_chess_core\java-open-chess-ccd\three-player-chess\chess-core\src\main\java\com\chess\core\coordinate\HexDirection.java
+============================================================
+package com.chess.core.coordinate;
+
+/**
+ * Defines the 6 orthogonal directions on a flat-topped hex grid.
+ * Stored as (dq, dr) vectors.
+ */
+public enum HexDirection {
+    // Vectors for Axial Coordinates
+    NORTH(0, -1),
+    NORTH_EAST(1, -1),
+    SOUTH_EAST(1, 0),
+    SOUTH(0, 1),
+    SOUTH_WEST(-1, 1),
+    NORTH_WEST(-1, 0);
+
+    private final int dq;
+    private final int dr;
+
+    HexDirection(int dq, int dr) {
+        this.dq = dq;
+        this.dr = dr;
+    }
+
+    public int dq() { return dq; }
+    public int dr() { return dr; }
+}
+
+============================================================
+FILE: D:\CCD web app\feature_chess_core\java-open-chess-ccd\three-player-chess\chess-core\src\main\java\com\chess\core\dto\GameStateDTO.java
+============================================================
+package com.chess.core.dto;
+
+import com.chess.core.game.GameStatus;
+import com.chess.core.game.PlayerColor;
+
+import java.util.List;
+
+public class GameStateDTO {
+
+    private String gameId;
+    private GameStatus status;
+    private PlayerColor currentPlayer;
+    private List<TileDTO> board;
+
+    public GameStateDTO() {
+    }
+
+    public GameStateDTO(String gameId,
+                        GameStatus status,
+                        PlayerColor currentPlayer,
+                        List<TileDTO> board) {
+        this.gameId = gameId;
+        this.status = status;
+        this.currentPlayer = currentPlayer;
+        this.board = board;
+    }
+
+    public String getGameId() {
+        return gameId;
+    }
+
+    public void setGameId(String gameId) {
+        this.gameId = gameId;
+    }
+
+    public GameStatus getStatus() {
+        return status;
+    }
+
+    public void setStatus(GameStatus status) {
+        this.status = status;
+    }
+
+    public PlayerColor getCurrentPlayer() {
+        return currentPlayer;
+    }
+
+    public void setCurrentPlayer(PlayerColor currentPlayer) {
+        this.currentPlayer = currentPlayer;
+    }
+
+    public List<TileDTO> getBoard() {
+        return board;
+    }
+
+    public void setBoard(List<TileDTO> board) {
+        this.board = board;
+    }
+}
+
+============================================================
+FILE: D:\CCD web app\feature_chess_core\java-open-chess-ccd\three-player-chess\chess-core\src\main\java\com\chess\core\dto\PieceDTO.java
+============================================================
+package com.chess.core.dto;
+
+import com.chess.core.game.PlayerColor;
+
+public record PieceDTO(String type, PlayerColor owner) {
+}
+
+============================================================
+FILE: D:\CCD web app\feature_chess_core\java-open-chess-ccd\three-player-chess\chess-core\src\main\java\com\chess\core\dto\TileDTO.java
+============================================================
+package com.chess.core.dto;
+
+import com.chess.core.game.PlayerColor;
+
+public class TileDTO {
+    private String coordinate;
+    private String pieceType;
+    private PlayerColor owner;
+
+    public TileDTO(String coordinate, String pieceType, PlayerColor owner) {
+        this.coordinate = coordinate;
+        this.pieceType = pieceType;
+        this.owner = owner;
+    }
+
+    public String getCoordinate() {
+        return coordinate;
+    }
+
+    public String getPieceType() {
+        return pieceType;
+    }
+
+    public PlayerColor getOwner() {
+        return owner;
+    }
+}
+
+============================================================
+FILE: D:\CCD web app\feature_chess_core\java-open-chess-ccd\three-player-chess\chess-core\src\main\java\com\chess\core\game\Game.java
+============================================================
+package com.chess.core.game;
+
+import com.chess.core.board.Board;
+
+/**
+ * The primary API facade for the Chess Core.
+ * Spring Boot interact with this interface.
+ */
+public interface Game {
+    String getId();
+    Board getBoard();
+    GameStatus getGameStatus();
+    PlayerColor getCurrentPlayer();
+    PlayerStatus getPlayerStatus(PlayerColor player);
+}
+
+============================================================
+FILE: D:\CCD web app\feature_chess_core\java-open-chess-ccd\three-player-chess\chess-core\src\main\java\com\chess\core\game\GameStatus.java
+============================================================
+package com.chess.core.game;
+
+/**
+ * Represents the high-level state of a game instance.
+ */
+public enum GameStatus {
+    IN_PROGRESS,
+    FINISHED, // Checkmate occurred
+    DRAW,     // 2-player stalemate or agreement
+    STALEMATE // Specific to 3-player (one player stalled, others continue)
+}
+
+============================================================
+FILE: D:\CCD web app\feature_chess_core\java-open-chess-ccd\three-player-chess\chess-core\src\main\java\com\chess\core\game\PlayerColor.java
+============================================================
+package com.chess.core.game;
+
+/**
+ * Represents the distinct participants in the game.
+ */
+public enum PlayerColor {
+    WHITE,
+    BLACK,
+    RED
+}
+
+============================================================
+FILE: D:\CCD web app\feature_chess_core\java-open-chess-ccd\three-player-chess\chess-core\src\main\java\com\chess\core\game\PlayerStatus.java
+============================================================
+package com.chess.core.game;
+
+/**
+ * Tracks the specific condition of an individual player.
+ */
+public enum PlayerStatus {
+    ACTIVE,     // Normal play
+    CHECKED,    // King is under threat; must move
+    STALEMATE,  // No legal moves, not in check (Turn skipped in 3-player)
+    DEFEATED    // Checkmated; eliminated from turn order
+}
+
+============================================================
+FILE: D:\CCD web app\feature_chess_core\java-open-chess-ccd\three-player-chess\chess-core\src\main\java\com\chess\core\game\ThreePlayerGame.java
+============================================================
+package com.chess.core.game;
+
+import com.chess.core.board.BasePiece;
+import com.chess.core.board.Board;
+import com.chess.core.board.CoordinateMapper;
+import com.chess.core.board.HexBoard;
+import com.chess.core.board.Piece;
+import com.chess.core.board.PieceType;
+import com.chess.core.board.pieces.*;
+import com.chess.core.coordinate.HexCoordinate;
+import com.chess.core.rules.BoardAnalyzer;
+import com.chess.core.rules.MoveValidator;
+
+import java.util.EnumMap;
+import java.util.Map;
+import java.util.UUID;
+
+public class ThreePlayerGame implements Game {
+    private final String gameId;
+    private final HexBoard board;
+    private PlayerColor currentPlayer;
+    private GameStatus gameStatus;
+    private final Map<PlayerColor, PlayerStatus> playerStatuses;
+
+    public ThreePlayerGame() {
+        this.gameId = UUID.randomUUID().toString();
+        this.board = new HexBoard();
+        initializeBoard();
+        this.currentPlayer = PlayerColor.WHITE;
+        this.gameStatus = GameStatus.IN_PROGRESS;
+
+        this.playerStatuses = new EnumMap<>(PlayerColor.class);
+        for (PlayerColor color : PlayerColor.values()) {
+            playerStatuses.put(color, PlayerStatus.ACTIVE);
+        }
+    }
+
+    public void nextTurn() {
+        PlayerColor next = nextPlayer(currentPlayer);
+        int attempts = 0;
+        while (playerStatuses.get(next) != PlayerStatus.ACTIVE && attempts < 3) {
+            next = nextPlayer(next);
+            attempts++;
+        }
+        if (attempts >= 3) {
+            gameStatus = GameStatus.FINISHED;
+            return;
+        }
+        this.currentPlayer = next;
+        updatePlayerStatus(this.currentPlayer);
+    }
+
+    private void updatePlayerStatus(PlayerColor player) {
+        if (BoardAnalyzer.isKingInCheck(board, player)) {
+            playerStatuses.put(player, PlayerStatus.CHECKED);
+        } else {
+            playerStatuses.put(player, PlayerStatus.ACTIVE);
+        }
+    }
+
+    private PlayerColor nextPlayer(PlayerColor current) {
+        switch (current) {
+            case WHITE:
+                return PlayerColor.RED;
+            case BLACK:
+                return PlayerColor.WHITE;
+            case RED:
+                return PlayerColor.BLACK;
+            default:
+                return PlayerColor.WHITE;
+        }
+    }
+
+    public boolean makeMove(String fromTile, String toTile) {
+        try {
+            HexCoordinate from = CoordinateMapper.toHex(fromTile);
+            HexCoordinate to = CoordinateMapper.toHex(toTile);
+            if (from == null || to == null)
+                return false;
+
+            if (!MoveValidator.isMoveLegal(board, from, to, currentPlayer)) {
+                return false;
+            }
+
+            Piece p = board.getPieceAt(from);
+            if (p instanceof BasePiece) {
+                ((BasePiece) p).setHasMoved(true);
+            }
+            board.movePiece(from, to);
+
+            // Promotion
+            if (board.getPieceAt(to).getPieceType() == PieceType.PAWN && to.distanceToCenter() == 0) {
+                board.setPiece(to, new Queen(currentPlayer));
+            }
+
+            nextTurn();
+            return true;
+
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    // --- SETUP ---
+    public void initializeBoard() {
+        // Radius 8 Hexagon Setup
+
+        // WHITE (Bottom)
+
+        // King & Queen Center-ish
+        board.setPiece(HexCoordinate.of(-5, 8), new Queen(PlayerColor.WHITE));
+        board.setPiece(HexCoordinate.of(-3, 8), new King(PlayerColor.WHITE)); // Bottom Right-ish
+
+        // Bishops/Knights/Rooks
+        board.setPiece(HexCoordinate.of(-6, 8), new Bishop(PlayerColor.WHITE));
+        board.setPiece(HexCoordinate.of(-2, 8), new Bishop(PlayerColor.WHITE));
+        board.setPiece(HexCoordinate.of(-4, 8), new Bishop(PlayerColor.WHITE));
+
+        board.setPiece(HexCoordinate.of(-7, 8), new Knight(PlayerColor.WHITE));
+        board.setPiece(HexCoordinate.of(-1, 8), new Knight(PlayerColor.WHITE)); // Tucked in
+
+        board.setPiece(HexCoordinate.of(-8, 8), new Rook(PlayerColor.WHITE));
+        board.setPiece(HexCoordinate.of(0, 8), new Rook(PlayerColor.WHITE)); // Flank
+
+        // White Pawns (r=4 and nearby)
+        board.setPiece(HexCoordinate.of(1, 7), new Pawn(PlayerColor.WHITE));
+        board.setPiece(HexCoordinate.of(0, 7), new Pawn(PlayerColor.WHITE));
+        board.setPiece(HexCoordinate.of(-1, 7), new Pawn(PlayerColor.WHITE));
+        board.setPiece(HexCoordinate.of(-2, 7), new Pawn(PlayerColor.WHITE));
+        board.setPiece(HexCoordinate.of(-3, 7), new Pawn(PlayerColor.WHITE));
+        board.setPiece(HexCoordinate.of(-4, 7), new Pawn(PlayerColor.WHITE));
+        board.setPiece(HexCoordinate.of(-5, 7), new Pawn(PlayerColor.WHITE));
+        board.setPiece(HexCoordinate.of(-6, 7), new Pawn(PlayerColor.WHITE));
+        board.setPiece(HexCoordinate.of(-7, 7), new Pawn(PlayerColor.WHITE));
+        board.setPiece(HexCoordinate.of(-8, 7), new Pawn(PlayerColor.WHITE));
+
+        board.setPiece(HexCoordinate.of(1, 6), new Pawn(PlayerColor.WHITE));
+        board.setPiece(HexCoordinate.of(0, 6), new Pawn(PlayerColor.WHITE));
+        board.setPiece(HexCoordinate.of(-1, 6), new Pawn(PlayerColor.WHITE));
+        board.setPiece(HexCoordinate.of(-2, 6), new Pawn(PlayerColor.WHITE));
+        board.setPiece(HexCoordinate.of(-3, 6), new Pawn(PlayerColor.WHITE));
+        board.setPiece(HexCoordinate.of(-4, 6), new Pawn(PlayerColor.WHITE));
+        board.setPiece(HexCoordinate.of(-5, 6), new Pawn(PlayerColor.WHITE));
+        board.setPiece(HexCoordinate.of(-6, 6), new Pawn(PlayerColor.WHITE));
+        board.setPiece(HexCoordinate.of(-7, 6), new Pawn(PlayerColor.WHITE));
+
+        // BLACK (Top Left) - Rotated Logic
+        board.setPiece(HexCoordinate.of(-3, -5), new King(PlayerColor.BLACK));
+        board.setPiece(HexCoordinate.of(-5, -3), new Queen(PlayerColor.BLACK));
+
+        board.setPiece(HexCoordinate.of(-2, -6), new Bishop(PlayerColor.BLACK));
+        board.setPiece(HexCoordinate.of(-6, -2), new Bishop(PlayerColor.BLACK));
+        board.setPiece(HexCoordinate.of(-4, -4), new Bishop(PlayerColor.BLACK));
+
+        board.setPiece(HexCoordinate.of(-1, -7), new Knight(PlayerColor.BLACK));
+        board.setPiece(HexCoordinate.of(-7, -1), new Knight(PlayerColor.BLACK));
+
+        board.setPiece(HexCoordinate.of(0, -8), new Rook(PlayerColor.BLACK));
+        board.setPiece(HexCoordinate.of(-8, 0), new Rook(PlayerColor.BLACK));
+
+        // Black Pawns
+        board.setPiece(HexCoordinate.of(-8, 1), new Pawn(PlayerColor.BLACK));
+        board.setPiece(HexCoordinate.of(-7, 0), new Pawn(PlayerColor.BLACK));
+        board.setPiece(HexCoordinate.of(-6, -1), new Pawn(PlayerColor.BLACK));
+        board.setPiece(HexCoordinate.of(-5, -2), new Pawn(PlayerColor.BLACK));
+        board.setPiece(HexCoordinate.of(-4, -3), new Pawn(PlayerColor.BLACK));
+        board.setPiece(HexCoordinate.of(-3, -4), new Pawn(PlayerColor.BLACK));
+        board.setPiece(HexCoordinate.of(-2, -5), new Pawn(PlayerColor.BLACK));
+        board.setPiece(HexCoordinate.of(-1, -6), new Pawn(PlayerColor.BLACK));
+        board.setPiece(HexCoordinate.of(0, -7), new Pawn(PlayerColor.BLACK));
+        board.setPiece(HexCoordinate.of(1, -8), new Pawn(PlayerColor.BLACK));
+
+        board.setPiece(HexCoordinate.of(-7, 1), new Pawn(PlayerColor.BLACK));
+        board.setPiece(HexCoordinate.of(-6, 0), new Pawn(PlayerColor.BLACK));
+        board.setPiece(HexCoordinate.of(-5, -1), new Pawn(PlayerColor.BLACK));
+        board.setPiece(HexCoordinate.of(-4, -2), new Pawn(PlayerColor.BLACK));
+        board.setPiece(HexCoordinate.of(-3, -3), new Pawn(PlayerColor.BLACK));
+        board.setPiece(HexCoordinate.of(-2, -4), new Pawn(PlayerColor.BLACK));
+        board.setPiece(HexCoordinate.of(-1, -5), new Pawn(PlayerColor.BLACK));
+        board.setPiece(HexCoordinate.of(0, -6), new Pawn(PlayerColor.BLACK));
+        board.setPiece(HexCoordinate.of(1, -7), new Pawn(PlayerColor.BLACK));
+
+        // RED (Top Right)
+        board.setPiece(HexCoordinate.of(8, -3), new King(PlayerColor.RED));
+        board.setPiece(HexCoordinate.of(8, -5), new Queen(PlayerColor.RED));
+
+        board.setPiece(HexCoordinate.of(8, -2), new Bishop(PlayerColor.RED));
+        board.setPiece(HexCoordinate.of(8, -6), new Bishop(PlayerColor.RED));
+        board.setPiece(HexCoordinate.of(8, -4), new Bishop(PlayerColor.RED));
+
+        board.setPiece(HexCoordinate.of(8, -1), new Knight(PlayerColor.RED));
+        board.setPiece(HexCoordinate.of(8, -7), new Knight(PlayerColor.RED));
+
+        board.setPiece(HexCoordinate.of(8, 0), new Rook(PlayerColor.RED));
+        board.setPiece(HexCoordinate.of(8, -8), new Rook(PlayerColor.RED));
+
+        // Red Pawns
+        board.setPiece(HexCoordinate.of(7, 1), new Pawn(PlayerColor.RED));
+        board.setPiece(HexCoordinate.of(7, 0), new Pawn(PlayerColor.RED));
+        board.setPiece(HexCoordinate.of(7, -1), new Pawn(PlayerColor.RED));
+        board.setPiece(HexCoordinate.of(7, -2), new Pawn(PlayerColor.RED));
+        board.setPiece(HexCoordinate.of(7, -3), new Pawn(PlayerColor.RED));
+        board.setPiece(HexCoordinate.of(7, -4), new Pawn(PlayerColor.RED));
+        board.setPiece(HexCoordinate.of(7, -5), new Pawn(PlayerColor.RED));
+        board.setPiece(HexCoordinate.of(7, -6), new Pawn(PlayerColor.RED));
+        board.setPiece(HexCoordinate.of(7, -7), new Pawn(PlayerColor.RED));
+        board.setPiece(HexCoordinate.of(7, -8), new Pawn(PlayerColor.RED));
+
+        board.setPiece(HexCoordinate.of(6, -7), new Pawn(PlayerColor.RED));
+        board.setPiece(HexCoordinate.of(6, -6), new Pawn(PlayerColor.RED));
+        board.setPiece(HexCoordinate.of(6, -5), new Pawn(PlayerColor.RED));
+        board.setPiece(HexCoordinate.of(6, -4), new Pawn(PlayerColor.RED));
+        board.setPiece(HexCoordinate.of(6, -3), new Pawn(PlayerColor.RED));
+        board.setPiece(HexCoordinate.of(6, -2), new Pawn(PlayerColor.RED));
+        board.setPiece(HexCoordinate.of(6, -1), new Pawn(PlayerColor.RED));
+        board.setPiece(HexCoordinate.of(6, 0), new Pawn(PlayerColor.RED));
+        board.setPiece(HexCoordinate.of(6, 1), new Pawn(PlayerColor.RED));
+    }
+
+    private void addSymmetricPiece(int q, int r, Piece whitePiece) {
+        // White
+        board.setPiece(HexCoordinate.of(q, r), whitePiece);
+        // Black (120 CW)
+        HexCoordinate blackPos = rotateCW(HexCoordinate.of(q, r));
+        board.setPiece(blackPos, createPieceCopy(whitePiece, PlayerColor.BLACK));
+        // Red (240 CW)
+        HexCoordinate redPos = rotateCW(blackPos);
+        board.setPiece(redPos, createPieceCopy(whitePiece, PlayerColor.RED));
+    }
+
+    private HexCoordinate rotateCW(HexCoordinate c) {
+        return HexCoordinate.of(-c.r(), c.q() + c.r());
+    }
+
+    private Piece createPieceCopy(Piece original, PlayerColor newColor) {
+        switch (original.getPieceType()) {
+            case PAWN:
+                return new Pawn(newColor);
+            case ROOK:
+                return new Rook(newColor);
+            case KNIGHT:
+                return new Knight(newColor);
+            case BISHOP:
+                return new Bishop(newColor);
+            case QUEEN:
+                return new Queen(newColor);
+            case KING:
+                return new King(newColor);
+            default:
+                return new Pawn(newColor);
+        }
+    }
+
+    @Override
+    public String getId() {
+        return gameId;
+    }
+
+    @Override
+    public Board getBoard() {
+        return board;
+    }
+
+    @Override
+    public GameStatus getGameStatus() {
+        return gameStatus;
+    }
+
+    @Override
+    public PlayerColor getCurrentPlayer() {
+        return currentPlayer;
+    }
+
+    @Override
+    public PlayerStatus getPlayerStatus(PlayerColor p) {
+        return playerStatuses.get(p);
+    }
+}
+
+============================================================
+FILE: D:\CCD web app\feature_chess_core\java-open-chess-ccd\three-player-chess\chess-core\src\main\java\com\chess\core\rules\BoardAnalyzer.java
+============================================================
+package com.chess.core.rules;
+
+import com.chess.core.board.HexBoard;
+import com.chess.core.board.Piece;
+import com.chess.core.board.PieceType;
+import com.chess.core.coordinate.HexCoordinate;
+import com.chess.core.game.PlayerColor;
+
+import java.util.List;
+import java.util.Map;
+
+public class BoardAnalyzer {
+
+    /**
+     * Checks if a King of a specific color is currently in check.
+     */
+    public static boolean isKingInCheck(HexBoard board, PlayerColor kingColor) {
+        // 1. Find the King
+        HexCoordinate kingPos = null;
+        for (Map.Entry<HexCoordinate, Piece> entry : board.getAllPieces().entrySet()) {
+            if (entry.getValue().getOwner() == kingColor && entry.getValue().getPieceType() == PieceType.KING) {
+                kingPos = entry.getKey();
+                break;
+            }
+        }
+
+        if (kingPos == null) return true; // King missing = Effectively defeated
+
+        // 2. Check if any enemy piece attacks this square
+        return isSquareAttacked(board, kingPos, kingColor);
+    }
+
+    /**
+     * Checks if a specific square is attacked by enemies of the defender.
+     * @param target The coordinate to check (usually the King's position)
+     * @param defender The player who is being attacked (we look for enemies of this color)
+     */
+    public static boolean isSquareAttacked(HexBoard board, HexCoordinate target, PlayerColor defender) {
+        for (Map.Entry<HexCoordinate, Piece> entry : board.getAllPieces().entrySet()) {
+            Piece attacker = entry.getValue();
+            HexCoordinate attackerPos = entry.getKey();
+
+            if (attacker.getOwner() != defender) {
+                // Get valid moves for this enemy.
+                // IMPORTANT: We use the piece's raw movement logic here.
+                // We rely on getValidMoves returning geometrical moves (Pseudo-legal moves).
+                List<HexCoordinate> attacks = attacker.getValidMoves(board, attackerPos);
+                
+                if (attacks.contains(target)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+}
+
+============================================================
+FILE: D:\CCD web app\feature_chess_core\java-open-chess-ccd\three-player-chess\chess-core\src\main\java\com\chess\core\rules\MoveValidator.java
+============================================================
+package com.chess.core.rules;
+
+import com.chess.core.board.HexBoard;
+import com.chess.core.board.Piece;
+import com.chess.core.coordinate.HexCoordinate;
+import com.chess.core.game.PlayerColor;
+
+public class MoveValidator {
+
+    public static boolean isMoveLegal(HexBoard board, HexCoordinate from, HexCoordinate to, PlayerColor player) {
+        // 1. Check if piece exists and belongs to player
+        Piece piece = board.getPieceAt(from);
+        if (piece == null || piece.getOwner() != player) return false;
+
+        // 2. Check geometry (can the piece physically reach that square?)
+        if (!piece.getValidMoves(board, from).contains(to)) {
+            return false;
+        }
+
+        // 3. Simulation: Does this move leave the King in check?
+        HexBoard simulationBoard = new HexBoard(board); 
+        simulationBoard.movePiece(from, to);
+
+        if (BoardAnalyzer.isKingInCheck(simulationBoard, player)) {
+            return false; // Illegal: Self-Check
+        }
+
+        return true;
+    }
+}
+
+============================================================
+FILE: D:\CCD web app\feature_chess_core\java-open-chess-ccd\three-player-chess\chess-core\src\main\java\com\chess\core\service\GameService.java
+============================================================
+package com.chess.core.service;
+
+import com.chess.core.dto.GameStateDTO;
+import com.chess.core.game.PlayerColor;
+import java.util.List;
+
+public interface GameService {
+    GameStateDTO createGame();
+    GameStateDTO getGameState(String gameId);
+    GameStateDTO makeMove(String gameId, String fromTile, String toTile, PlayerColor player);
+    
+    // NEW: Get valid moves for a piece
+    List<String> getLegalMoves(String gameId, String tileId);
+}
+
+============================================================
+FILE: D:\CCD web app\feature_chess_core\java-open-chess-ccd\three-player-chess\chess-core\src\main\java\com\chess\core\service\GameServiceImpl.java
+============================================================
+package com.chess.core.service;
+
+import com.chess.core.board.CoordinateMapper;
+import com.chess.core.board.HexBoard;
+import com.chess.core.board.Piece;
+import com.chess.core.coordinate.HexCoordinate;
+import com.chess.core.dto.GameStateDTO;
+import com.chess.core.dto.TileDTO;
+import com.chess.core.game.PlayerColor;
+import com.chess.core.game.ThreePlayerGame;
+import com.chess.core.rules.MoveValidator;
+
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+public class GameServiceImpl implements GameService {
+
+    private static final Map<String, ThreePlayerGame> gameRepository = new HashMap<>();
+
+    @Override
+    public GameStateDTO createGame() {
+        ThreePlayerGame game = new ThreePlayerGame();
+        gameRepository.put(game.getId(), game);
+        return convertToDTO(game);
+    }
+
+    @Override
+    public GameStateDTO getGameState(String gameId) {
+        ThreePlayerGame game = gameRepository.get(gameId);
+        if (game == null) throw new IllegalArgumentException("Game not found: " + gameId);
+        return convertToDTO(game);
+    }
+
+    @Override
+    public GameStateDTO makeMove(String gameId, String fromTile, String toTile, PlayerColor player) {
+        ThreePlayerGame game = gameRepository.get(gameId);
+        if (game == null) throw new IllegalArgumentException("Game not found: " + gameId);
+
+        if (player != null && player != game.getCurrentPlayer()) {
+            return convertToDTO(game);
+        }
+
+        game.makeMove(fromTile, toTile);
+        return convertToDTO(game);
+    }
+
+    @Override
+    public List<String> getLegalMoves(String gameId, String tileId) {
+        ThreePlayerGame game = gameRepository.get(gameId);
+        if (game == null) return Collections.emptyList();
+
+        HexBoard board = (HexBoard) game.getBoard();
+        HexCoordinate start = CoordinateMapper.toHex(tileId);
+        if (start == null) return Collections.emptyList();
+
+        Piece piece = board.getPieceAt(start);
+        if (piece == null) return Collections.emptyList();
+
+        // Get all pseudo-valid moves from the piece logic
+        List<HexCoordinate> candidates = piece.getValidMoves(board, start);
+        
+        // Filter out moves that leave King in check (Self-Check) using Validator
+        return candidates.stream()
+            .filter(dest -> MoveValidator.isMoveLegal(board, start, dest, piece.getOwner()))
+            .map(CoordinateMapper::toId)
+            .collect(Collectors.toList());
+    }
+
+    private GameStateDTO convertToDTO(ThreePlayerGame game) {
+        HexBoard hexBoard = (HexBoard) game.getBoard();
+        List<TileDTO> tiles = new ArrayList<>();
+
+        for (HexCoordinate coord : hexBoard.getPlayableCoordinates()) {
+            Piece piece = hexBoard.getPieceAt(coord);
+            String coordinate = CoordinateMapper.toId(coord);
+            String pieceType = (piece != null) ? piece.getType() : null;
+            PlayerColor owner = (piece != null) ? piece.getOwner() : null;
+            tiles.add(new TileDTO(coordinate, pieceType, owner));
+        }
+
+        return new GameStateDTO(
+            game.getId(),
+            game.getGameStatus(),
+            game.getCurrentPlayer(),
+            tiles
+        );
+    }
+}
+
+============================================================
+FILE: D:\CCD web app\feature_chess_core\java-open-chess-ccd\three-player-chess\chess-core\src\test\java\com\chess\core\board\pieces\RookTest.java
+============================================================
+package com.chess.core.board.pieces;
+
+import com.chess.core.board.HexBoard;
+import com.chess.core.coordinate.HexCoordinate;
+import com.chess.core.game.PlayerColor;
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class RookTest {
+
+    @Test
+    void testRookSlideAndCapture() {
+        HexBoard board = new HexBoard();
+        
+        // Setup in White's Territory (Bottom)
+        // White Rook at (0, 5) [Back Rank]
+        // Black Piece at (0, 4) [One step North]
+        // (0, 3) is empty
+        
+        // Note: Based on our board generation, r=5,4,3,2 are valid for White.
+        // q=0 is valid for all these rows.
+        
+        HexCoordinate start = HexCoordinate.of(0, 5);
+        HexCoordinate enemyPos = HexCoordinate.of(0, 4);
+        
+        Rook whiteRook = new Rook(PlayerColor.WHITE);
+        Rook blackPawn = new Rook(PlayerColor.BLACK); // Dummy enemy
+
+        board.setPiece(start, whiteRook);
+        board.setPiece(enemyPos, blackPawn);
+
+        // Act
+        List<HexCoordinate> moves = whiteRook.getValidMoves(board, start);
+
+        // Assert
+        // 1. Should be able to capture the enemy at (0, 4) (Radial In/North)
+        assertTrue(moves.contains(enemyPos), "Rook should capture enemy at (0, 4)");
+        
+        // 2. Should NOT be able to move past the enemy to (0, 3)
+        assertFalse(moves.contains(HexCoordinate.of(0, 3)), "Rook should be blocked by enemy");
+    }
+}
+
+============================================================
+FILE: D:\CCD web app\feature_chess_core\java-open-chess-ccd\three-player-chess\chess-core\src\test\java\com\chess\core\coordinate\HexCoordinateTest.java
+============================================================
+package com.chess.core.coordinate;
+
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+
+class HexCoordinateTest {
+
+    @Test
+    void testEquality() {
+        HexCoordinate a = HexCoordinate.of(1, -2);
+        HexCoordinate b = HexCoordinate.of(1, -2);
+        HexCoordinate c = HexCoordinate.of(0, 0);
+
+        assertEquals(a, b, "Coordinates with same q,r should be equal");
+        assertNotEquals(a, c, "Coordinates with different q,r should not be equal");
+    }
+
+    @Test
+    void testCubeConstraint() {
+        // In cube coords, q + r + s must equal 0
+        HexCoordinate coord = HexCoordinate.of(2, -5);
+        assertEquals(0, coord.q() + coord.r() + coord.s(), "Constraint q+r+s=0 failed");
+    }
+
+    @Test
+    void testDirectionAddition() {
+        HexCoordinate start = HexCoordinate.of(0, 0);
+        // moving NORTH (0, -1)
+        HexCoordinate neighbor = start.plus(HexDirection.NORTH.dq(), HexDirection.NORTH.dr());
+        
+        assertEquals(0, neighbor.q());
+        assertEquals(-1, neighbor.r());
+    }
+}
+
+============================================================
+FILE: D:\CCD web app\feature_chess_core\java-open-chess-ccd\three-player-chess\chess-core\src\test\java\com\chess\core\game\EngineTest.java
+============================================================
+package com.chess.core.game;
+
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+
+class EngineTest {
+    @Test
+    void testGameInitialization() {
+        ThreePlayerGame game = new ThreePlayerGame();
+        // White King at -3, 5
+        assertNotNull(game.getBoard().getPiece("-3,5"), "White King should be at -3,5");
+    }
+    
+    @Test
+    void testSimpleMove() {
+        ThreePlayerGame game = new ThreePlayerGame();
+        // Move White Pawn from -3,4 to -3,3
+        boolean success = game.makeMove("-3,4", "-3,3");
+        assertTrue(success, "White Pawn should move");
+        assertEquals(PlayerColor.BLACK, game.getCurrentPlayer());
+    }
+}
+
+============================================================
+FILE: D:\CCD web app\feature_chess_core\java-open-chess-ccd\three-player-chess\three-player-service\src\main\java\com\chess\threeplayer\ThreePlayerCoreApplication.java
+============================================================
+package com.chess.threeplayer;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class ThreePlayerCoreApplication {
+
+	public static void main(String[] args) {
+		SpringApplication.run(ThreePlayerCoreApplication.class, args);
+	}
+
+}
+
+
+============================================================
+FILE: D:\CCD web app\feature_chess_core\java-open-chess-ccd\three-player-chess\three-player-service\src\main\java\com\chess\threeplayer\controller\GameController.java
+============================================================
+package com.chess.threeplayer.controller;
+
+import com.chess.core.dto.GameStateDTO;
+import com.chess.core.game.PlayerColor;
+import com.chess.core.service.GameService;
+import com.chess.core.service.GameServiceImpl;
+import com.chess.threeplayer.dto.MoveRequest;
+import org.springframework.web.bind.annotation.*;
+import java.util.List;
+
+@RestController
+@RequestMapping("/three-player/games")
+// @CrossOrigin(origins = {
+// "http://localhost:8080",
+// "http://localhost:5173"
+// })
+public class GameController {
+
+    private final GameService gameService = new GameServiceImpl();
+
+    @PostMapping
+    public GameStateDTO createGame() {
+        return gameService.createGame();
+    }
+
+    @GetMapping("/{gameId}")
+    public GameStateDTO getGameState(@PathVariable String gameId) {
+        return gameService.getGameState(gameId);
+    }
+
+    @PostMapping("/{gameId}/moves")
+    public GameStateDTO makeMove(@PathVariable String gameId, @RequestBody MoveRequest move) {
+        return gameService.makeMove(gameId, move.getFrom(), move.getTo(), move.getPlayer());
+    }
+
+    // NEW: Endpoint to get valid moves
+    @GetMapping("/{gameId}/moves")
+    public List<String> getPossibleMoves(@PathVariable String gameId, @RequestParam String from) {
+        return gameService.getLegalMoves(gameId, from);
+    }
+}
+
+============================================================
+FILE: D:\CCD web app\feature_chess_core\java-open-chess-ccd\three-player-chess\three-player-service\src\main\java\com\chess\threeplayer\dto\MoveRequest.java
+============================================================
+package com.chess.threeplayer.dto;
+
+import com.chess.core.game.PlayerColor;
+
+public class MoveRequest {
+
+    private String from;
+    private String to;
+    private PlayerColor player;
+
+    public MoveRequest() {
+    }
+
+    public String getFrom() {
+        return from;
+    }
+
+    public void setFrom(String from) {
+        this.from = from;
+    }
+
+    public String getTo() {
+        return to;
+    }
+
+    public void setTo(String to) {
+        this.to = to;
+    }
+
+    public PlayerColor getPlayer() {
+        return player;
+    }
+
+    public void setPlayer(PlayerColor player) {
+        this.player = player;
+    }
+}
+
+============================================================
+FILE: D:\CCD web app\feature_chess_core\java-open-chess-ccd\three-player-chess\three-player-service\src\test\java\com\chess\threeplayer\ThreePlayerCoreApplicationTests.java
+============================================================
+package com.chess.threeplayer;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.SpringBootTest;
+
+@SpringBootTest
+class ThreePlayerCoreApplicationTests {
+
+	@Test
+	void contextLoads() {
+	}
+
+}
+

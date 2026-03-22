@@ -1,0 +1,4 @@
+rootProject.name = 'two-player-chess'
+
+include 'chess-core'
+include 'two-player-service'
